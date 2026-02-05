@@ -1,6 +1,9 @@
 package com.example.lab5_starter;
 
 import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.ListView;
@@ -11,12 +14,20 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import com.google.android.gms.tasks.OnSuccessListener;
+import com.google.firebase.firestore.CollectionReference;
+import com.google.firebase.firestore.DocumentReference;
+import com.google.firebase.firestore.FirebaseFirestore;
+import com.google.firebase.firestore.QueryDocumentSnapshot;
+
 import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity implements CityDialogFragment.CityDialogListener {
 
     private Button addCityButton;
     private ListView cityListView;
+    private FirebaseFirestore db;
+    private CollectionReference citiesRef;  // Store reference to cities collection
 
     private ArrayList<City> cityArrayList;
     private ArrayAdapter<City> cityArrayAdapter;
@@ -32,6 +43,9 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
             return insets;
         });
 
+        db = FirebaseFirestore.getInstance(); // making connection to database
+        citiesRef = db.collection("cities"); // table in the database
+
         // Set views
         addCityButton = findViewById(R.id.buttonAddCity);
         cityListView = findViewById(R.id.listviewCities);
@@ -41,18 +55,37 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
         cityArrayAdapter = new CityArrayAdapter(this, cityArrayList);
         cityListView.setAdapter(cityArrayAdapter);
 
-        addDummyData();
-
         // set listeners
+        // This listener is making changes to the remote database
+        citiesRef.addSnapshotListener((value, error) -> {
+            // logic for snapshot listener
+            if (error != null) {
+                Log.e("Firestore", error.toString());
+            }
+
+            if (value != null && !value.isEmpty()) {
+                cityArrayList.clear();
+                for (QueryDocumentSnapshot snapshot: value) {
+                    String name = snapshot.getString("name");
+                    String province = snapshot.getString("province");
+
+                    cityArrayList.add(new City(name, province));
+                }
+                cityArrayAdapter.notifyDataSetChanged();
+            }
+        });
+
         addCityButton.setOnClickListener(view -> {
             CityDialogFragment cityDialogFragment = new CityDialogFragment();
             cityDialogFragment.show(getSupportFragmentManager(),"Add City");
         });
 
-        cityListView.setOnItemClickListener((adapterView, view, i, l) -> {
-            City city = cityArrayAdapter.getItem(i);
-            CityDialogFragment cityDialogFragment = CityDialogFragment.newInstance(city);
-            cityDialogFragment.show(getSupportFragmentManager(),"City Details");
+
+        cityListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            @Override
+            public void onItemClick(AdapterView adapterview, View view, int position, long id) {
+                deleteCity(cityArrayList.get(position));
+            }
         });
 
     }
@@ -70,6 +103,38 @@ public class MainActivity extends AppCompatActivity implements CityDialogFragmen
     public void addCity(City city){
         cityArrayList.add(city);
         cityArrayAdapter.notifyDataSetChanged();
+
+        // Path to city
+        DocumentReference documentReference = citiesRef.document(city.getName());
+        // Write city reference to collection
+        documentReference.set(city)
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void unused) {
+                        // whatever is in here will run on success add
+                        Log.d("Firestore", "DocumentSnapshot successfully written");
+                    }
+                });
+
+    }
+
+    public void deleteCity(City city){
+
+        // Update the UI immediately
+        cityArrayList.remove(city);
+        cityArrayAdapter.notifyDataSetChanged();
+
+        // Path to city
+        DocumentReference documentReference = citiesRef.document(city.getName());
+        // Write city reference to collection
+        documentReference.delete()
+                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                    @Override
+                    public void onSuccess(Void unused) {
+                        // whatever is in here will run on success add
+                        Log.d("Firestore", "DocumentSnapshot successfully written");
+                    }
+                });
 
     }
 
